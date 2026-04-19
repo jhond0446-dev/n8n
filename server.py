@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import psycopg2, psycopg2.extras
-from passlib.context import CryptContext
+import bcrypt as _bcrypt
 from cryptography.fernet import Fernet
 import io
 
@@ -25,7 +25,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:password@lo
 SECRET_KEY   = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 FERNET_KEY   = os.environ.get("FERNET_KEY", Fernet.generate_key().decode())
 
-pwd_ctx  = CryptContext(schemes=["bcrypt"], deprecated="auto")
+import bcrypt as _bcrypt
 fernet   = Fernet(FERNET_KEY.encode() if isinstance(FERNET_KEY, str) else FERNET_KEY)
 security = HTTPBearer()
 
@@ -57,8 +57,8 @@ def db_query(sql, params=None, fetch=None):
         conn.close()
 
 # ── AUTH ──────────────────────────────────────────────── 
-def hash_password(pw): return pwd_ctx.hash(pw)
-def verify_password(pw, h): return pwd_ctx.verify(pw, h)
+def hash_password(pw): return _bcrypt.hashpw(pw.encode(), _bcrypt.gensalt()).decode()
+def verify_password(pw, h): return _bcrypt.checkpw(pw.encode(), h.encode() if isinstance(h, str) else h)
 
 def create_token(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
