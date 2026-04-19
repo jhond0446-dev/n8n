@@ -49,9 +49,15 @@ def db_query(sql, params=None, fetch=None):
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(sql, params or ())
-        if fetch == 'one':  return dict(cur.fetchone()) if cur.rowcount or cur.description else None
-        if fetch == 'all':  return [dict(r) for r in cur.fetchall()]
-        if fetch == 'scalar': row = cur.fetchone(); return row[0] if row else None
+        if fetch == 'one':
+            row = cur.fetchone()
+            return dict(row) if row else None
+        if fetch == 'all':
+            rows = cur.fetchall()
+            return [dict(r) for r in rows] if rows else []
+        if fetch == 'scalar':
+            row = cur.fetchone()
+            return row[0] if row else None
         return None
     finally:
         conn.close()
