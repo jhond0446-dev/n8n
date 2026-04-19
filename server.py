@@ -23,10 +23,16 @@ import io
 # ── CONFIG ──────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:password@localhost:5432/postgres")
 SECRET_KEY   = os.environ.get("SECRET_KEY", secrets.token_hex(32))
-FERNET_KEY   = os.environ.get("FERNET_KEY", Fernet.generate_key().decode())
+_fernet_key = os.environ.get("FERNET_KEY", "")
+if not _fernet_key:
+    _fernet_key = Fernet.generate_key().decode()
+try:
+    fernet = Fernet(_fernet_key.encode() if isinstance(_fernet_key, str) else _fernet_key)
+except Exception:
+    fernet = Fernet(Fernet.generate_key())
 
 pwd_ctx  = CryptContext(schemes=["bcrypt"], deprecated="auto")
-fernet   = Fernet(FERNET_KEY.encode() if isinstance(FERNET_KEY, str) else FERNET_KEY)
+
 security = HTTPBearer()
 
 app = FastAPI(title="Automation Reports API", version="2.0.0")
