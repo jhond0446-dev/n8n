@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import psycopg2, psycopg2.extras
-import bcrypt as _bcrypt
+from passlib.context import CryptContext
 from cryptography.fernet import Fernet
 import io
 
@@ -25,7 +25,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:password@lo
 SECRET_KEY   = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 FERNET_KEY   = os.environ.get("FERNET_KEY", Fernet.generate_key().decode())
 
-import bcrypt as _bcrypt
+pwd_ctx  = CryptContext(schemes=["bcrypt"], deprecated="auto")
 fernet   = Fernet(FERNET_KEY.encode() if isinstance(FERNET_KEY, str) else FERNET_KEY)
 security = HTTPBearer()
 
@@ -57,8 +57,8 @@ def db_query(sql, params=None, fetch=None):
         conn.close()
 
 # ── AUTH ──────────────────────────────────────────────── 
-def hash_password(pw): return _bcrypt.hashpw(pw.encode(), _bcrypt.gensalt()).decode()
-def verify_password(pw, h): return _bcrypt.checkpw(pw.encode(), h.encode())
+def hash_password(pw): return pwd_ctx.hash(pw)
+def verify_password(pw, h): return pwd_ctx.verify(pw, h)
 
 def create_token(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
@@ -218,6 +218,27 @@ async def get_workflows(instance_id: int, period: int = Query(30), user=Depends(
     except Exception as e:
         raise HTTPException(502, str(e))
 
+def save_executions_to_db(instance_id: int, executions: list):
+    if not executions:
+        return
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        for ex in executions:
+            started = parse_dt(ex.get("startedAt"))
+            stopped = parse_dt(ex.get("stoppedAt"))
+            cur.execute(
+                """INSERT INTO ar_executions (id, workflow_id, instance_id, status, started_at, stopped_at, run_ms)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (id, instance_id) DO NOTHING""",
+                (str(ex["id"]), str(ex["workflowId"]), instance_id,
+                 ex.get("status","unknown"), started, stopped, ex.get("runMs", 0))
+            )
+        conn.commit()
+        print(f"Saved {len(executions)} executions to DB")
+    finally:
+        conn.close()
+
 @app.get("/api/executions/{instance_id}")
 async def get_executions(instance_id: int, period: int = Query(30), user=Depends(get_current_user)):
     row = db_query("SELECT url, api_key_encrypted FROM ar_instances WHERE id=%s AND user_id=%s",
@@ -225,10 +246,34 @@ async def get_executions(instance_id: int, period: int = Query(30), user=Depends
     if not row: raise HTTPException(404, "Instancia no encontrada")
     api_key = fernet.decrypt(row['api_key_encrypted'].encode()).decode()
     try:
-        execs = await fetch_executions(row['url'], api_key, period)
-        return {"executions": execs, "total": len(execs)}
+        # Fetch from n8n and save new ones to DB
+        fresh_execs = await fetch_executions(row['url'], api_key, 7)
+        save_executions_to_db(instance_id, fresh_execs)
     except Exception as e:
-        raise HTTPException(502, str(e))
+        print(f"Warning: could not sync from n8n: {e}")
+
+    # Always read from DB (includes historical data)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=period)
+    rows = db_query(
+        """SELECT id, workflow_id as "workflowId", instance_id as "instanceId",
+              status, started_at as "startedAt", stopped_at as "stoppedAt", run_ms as "runMs"
+           FROM ar_executions
+           WHERE instance_id=%s AND started_at >= %s
+           ORDER BY started_at DESC""",
+        (instance_id, cutoff), fetch='all'
+    )
+    execs = []
+    for r in (rows or []):
+        execs.append({
+            "id": r["id"],
+            "workflowId": r["workflowId"],
+            "instanceId": r["instanceId"],
+            "status": r["status"],
+            "startedAt": r["startedAt"].isoformat() if r["startedAt"] else None,
+            "stoppedAt": r["stoppedAt"].isoformat() if r["stoppedAt"] else None,
+            "runMs": r["runMs"] or 0,
+        })
+    return {"executions": execs, "total": len(execs)}
 
 # ── FOLDERS ────────────────────────────────────────────
 @app.get("/api/folders")
