@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Automation Reports — Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --accent: #e8460a;
+      --border: #e4e2db;
+      --text: #1a1917;
+      --muted: #6b6960;
+      --bg: #f5f4f0;
+      --surface: #ffffff;
+    }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-font-smoothing: antialiased;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px;
+      width: 380px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+    }
+    .brand {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
+    }
+    .sub {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 28px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 5px;
+    }
+    input {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--surface);
+      margin-bottom: 16px;
+      transition: border-color 0.15s;
+    }
+    input:focus { outline: none; border-color: var(--accent); }
+    button {
+      width: 100%;
+      padding: 10px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-top: 4px;
+    }
+    button:hover { background: #c93d08; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    .error {
+      font-size: 13px;
+      color: #c0392b;
+      margin-top: 12px;
+      min-height: 18px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">AUTOMATION REPORTS</div>
+    <h1>Iniciar sesión</h1>
+    <p class="sub">Accede a tu dashboard de automatizaciones.</p>
+    <label>Email</label>
+    <input type="email" id="email" placeholder="tu@email.com" />
+    <label>Contraseña</label>
+    <input type="password" id="password" placeholder="••••••••" />
+    <button id="login-btn">Entrar</button>
+    <div class="error" id="error-msg"></div>
+  </div>
+  <script>
+    async function login() {
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const btn = document.getElementById('login-btn');
+      const err = document.getElementById('error-msg');
+
+      if (!email || !password) { err.textContent = 'Completa todos los campos.'; return; }
+
+      btn.disabled = true;
+      btn.textContent = 'Entrando...';
+      err.textContent = '';
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al iniciar sesión');
+        localStorage.setItem('ar_token', data.token);
+        localStorage.setItem('ar_user', JSON.stringify(data.user));
+        window.location.href = '/';
+      } catch(e) {
+        err.textContent = e.message;
+        btn.disabled = false;
+        btn.textContent = 'Entrar';
+      }
+    }
+
+    document.getElementById('login-btn').addEventListener('click', login);
+    document.getElementById('password').addEventListener('keydown', e => { if(e.key === 'Enter') login(); });
+    document.getElementById('email').addEventListener('keydown', e => { if(e.key === 'Enter') login(); });
+
+    // If already logged in redirect
+    if (localStorage.getItem('ar_token')) window.location.href = '/';
+  </script>
+</body>
+</html>
